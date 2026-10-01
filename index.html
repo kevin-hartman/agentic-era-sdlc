@@ -340,7 +340,7 @@
 
 <p>Every phase boundary is a checkpoint the orchestrator will not cross until a person approves: an intake review, a per-story acceptance, and the five hashed, human-approved gates (<code>plan</code>, <code>spec</code>, <code>test_list</code>, <code>deploy</code>, <code>promote</code>). The loop re-opens by design: <code>/deploy</code> ends each sprint as working software, and the <em>human</em> Product Owner reviews it and plans the next increment from what shipped.</p>
 <h3>The shifts, stage by stage</h3>
-<p>The stage-by-stage table below is adapted from the shifts table in Anthropic's original playbook (see the Reference), reworked for a branching-database SDLC. Notably missing is this SDLC's separate Test phase. Why? In this SDLC the Testing phase completely Shifts Left.</p>
+<p>The stage-by-stage table below is adapted from the shifts table in Anthropic's original playbook (see the Reference), reworked for a branching-database SDLC. Notably missing is this SDLC's separate Test phase. Why? In this SDLC the Testing phase completely shifts left.</p>
 <table>
 <thead>
 <tr>
@@ -947,7 +947,7 @@ claude
 <h4>What improves</h4>
 <ul>
 <li><strong>Now:</strong> share of pipeline steps that complete without paging a human, and time from <code>promote</code> to a verified deploy on the parent tier.</li>
-<li><strong>Later:</strong> DevOps Research and Assessment (DORA) measures, which the CI and deployment tooling already emit, read for stability as well as throughput; and unsafe migrations caught before merge versus those reaching production.</li>
+<li><strong>Later:</strong> DevOps Research and Assessment (DORA) metrics, which the CI and deployment tooling already emit, read for stability as well as throughput; and unsafe migrations caught before merge versus those reaching production.</li>
 </ul>
 <hr />
 <aside class="aside-note">
