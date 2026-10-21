@@ -1142,7 +1142,6 @@ window.CONSORT_WEB = { site: "agentic-era-sdlc" };
   var WANT_VITALS = W.vitals !== false;
   var WANT_INTERACTIONS = W.interactions !== false;
 
-  if (navigator.doNotTrack === "1" || navigator.msDoNotTrack === "1" || navigator.globalPrivacyControl) return;
   if (!navigator.sendBeacon && !window.fetch) return;
 
   function uuid() {
