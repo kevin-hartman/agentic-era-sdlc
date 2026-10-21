@@ -1129,3 +1129,164 @@ claude
     }
   })();
 </script>
+<!-- Consort web telemetry — traffic + Web Vitals + interactions. Fire-and-forget, no PII.
+     Source of truth: consort-telemetry-ingest/clients/web/beacon.js — keep this inline copy in sync.
+     Sends NDJSON to the open route POST /v1/web (no token). Respects DNT / GPC. -->
+<script>
+window.CONSORT_WEB = { site: "agentic-era-sdlc" };
+(function () {
+  "use strict";
+  var W = window.CONSORT_WEB || {};
+  var ENDPOINT = W.endpoint || "https://consort-telemetry-ingest-v2.azurewebsites.net/v1/web";
+  var SITE = W.site || location.hostname || "unknown";
+  var WANT_VITALS = W.vitals !== false;
+  var WANT_INTERACTIONS = W.interactions !== false;
+
+  if (navigator.doNotTrack === "1" || navigator.msDoNotTrack === "1" || navigator.globalPrivacyControl) return;
+  if (!navigator.sendBeacon && !window.fetch) return;
+
+  function uuid() {
+    if (crypto && crypto.randomUUID) return crypto.randomUUID();
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
+      var r = (Math.random() * 16) | 0, v = c === "x" ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  }
+  function stored(store, key) {
+    try {
+      var id = store.getItem(key);
+      if (!id) { id = uuid(); store.setItem(key, id); }
+      return id;
+    } catch (_) { return uuid(); }
+  }
+  var VISITOR_ID = stored(localStorage, "cwt.vid");
+  var SESSION_ID = stored(sessionStorage, "cwt.sid");
+  var PAGE_ID = uuid();
+
+  var ua = navigator.userAgent || "";
+  function device() {
+    if (/Tablet|iPad/i.test(ua)) return "tablet";
+    if (/Mobi|Android|iPhone/i.test(ua)) return "mobile";
+    return "desktop";
+  }
+  function browser() {
+    if (/Edg\//.test(ua)) return "edge";
+    if (/Chrome\//.test(ua) && !/Edg\//.test(ua)) return "chrome";
+    if (/Firefox\//.test(ua)) return "firefox";
+    if (/Safari\//.test(ua) && !/Chrome\//.test(ua)) return "safari";
+    return "other";
+  }
+  function os() {
+    if (/iPhone|iPad|iPod/i.test(ua)) return "ios";
+    if (/Android/i.test(ua)) return "android";
+    if (/Mac OS X/i.test(ua)) return "macos";
+    if (/Windows/i.test(ua)) return "windows";
+    if (/Linux/i.test(ua)) return "linux";
+    return "other";
+  }
+  function referrerHost() {
+    try { return document.referrer ? new URL(document.referrer).hostname : null; } catch (_) { return null; }
+  }
+  function utm(name) {
+    try { var v = new URLSearchParams(location.search).get(name); return v ? String(v).slice(0, 128) : null; }
+    catch (_) { return null; }
+  }
+  function lang() { return (navigator.language || "").split("-")[0] || null; }
+
+  function send(lines) {
+    if (!lines.length) return;
+    var body = lines.map(function (o) { return JSON.stringify(o); }).join("\n");
+    try {
+      if (navigator.sendBeacon) {
+        var blob = new Blob([body], { type: "text/plain;charset=UTF-8" });
+        if (navigator.sendBeacon(ENDPOINT, blob)) return;
+      }
+      fetch(ENDPOINT, { method: "POST", body: body, keepalive: true, mode: "no-cors",
+        headers: { "Content-Type": "text/plain" } });
+    } catch (_) {}
+  }
+
+  send([{
+    name: "web.pageview", event_id: PAGE_ID, site: SITE,
+    visitor_id: VISITOR_ID, session_id: SESSION_ID,
+    path: location.pathname || "/",
+    referrer_host: referrerHost(),
+    device: device(), browser: browser(), os: os(),
+    viewport_w: window.innerWidth || null, viewport_h: window.innerHeight || null,
+    lang: lang(), tz_offset_min: -new Date().getTimezoneOffset(),
+    utm_source: utm("utm_source"), utm_medium: utm("utm_medium"), utm_campaign: utm("utm_campaign"),
+    ts: Date.now(),
+  }]);
+
+  var queue = [];
+  function enqueueVital(metric, value, rating) {
+    queue.push({ name: "web.vital", event_id: uuid(), page_id: PAGE_ID, session_id: SESSION_ID,
+      site: SITE, path: location.pathname || "/", metric: metric,
+      value: Math.round(value * 1000) / 1000, rating: rating || null, ts: Date.now() });
+  }
+  function enqueueEvent(action, target, value) {
+    queue.push({ name: "web.event", event_id: uuid(), page_id: PAGE_ID, session_id: SESSION_ID,
+      site: SITE, path: location.pathname || "/", action: action,
+      target: target ? String(target).slice(0, 64) : null,
+      value: value == null ? null : value | 0, ts: Date.now() });
+  }
+  var flushed = false;
+  function flush() {
+    if (flushed) return;
+    flushed = true;
+    if (lcp != null) enqueueVital("LCP", lcp, rate("LCP", lcp));
+    if (clsStarted) enqueueVital("CLS", cls, rate("CLS", cls));
+    if (inp != null) enqueueVital("INP", inp, rate("INP", inp));
+    send(queue.splice(0, queue.length));
+  }
+
+  var lcp = null, cls = 0, clsStarted = false, inp = null;
+  function rate(metric, v) {
+    var t = { LCP: [2500, 4000], CLS: [0.1, 0.25], INP: [200, 500], FCP: [1800, 3000], TTFB: [800, 1800] }[metric];
+    if (!t) return null;
+    return v <= t[0] ? "good" : v <= t[1] ? "needs-improvement" : "poor";
+  }
+  function observe(type, cb, opts) {
+    try { var po = new PerformanceObserver(cb); po.observe(Object.assign({ type: type, buffered: true }, opts)); return po; }
+    catch (_) { return null; }
+  }
+  if (WANT_VITALS && "PerformanceObserver" in window) {
+    try {
+      var nav = performance.getEntriesByType("navigation")[0];
+      if (nav && nav.responseStart > 0) enqueueVital("TTFB", nav.responseStart, rate("TTFB", nav.responseStart));
+    } catch (_) {}
+    observe("paint", function (l) {
+      l.getEntries().forEach(function (e) {
+        if (e.name === "first-contentful-paint") enqueueVital("FCP", e.startTime, rate("FCP", e.startTime));
+      });
+    });
+    observe("largest-contentful-paint", function (l) {
+      var es = l.getEntries(); lcp = es[es.length - 1].startTime;
+    });
+    observe("layout-shift", function (l) {
+      l.getEntries().forEach(function (e) { if (!e.hadRecentInput) { cls += e.value; clsStarted = true; } });
+    });
+    observe("event", function (l) {
+      l.getEntries().forEach(function (e) { if (inp == null || e.duration > inp) inp = e.duration; });
+    }, { durationThreshold: 40 });
+  }
+
+  if (WANT_INTERACTIONS) {
+    document.addEventListener("click", function (ev) {
+      var el = ev.target && ev.target.closest ? ev.target.closest("[data-telemetry]") : null;
+      if (el) enqueueEvent("click", el.getAttribute("data-telemetry"), null);
+    }, { capture: true, passive: true });
+
+    var marks = [25, 50, 75, 100], hit = {};
+    document.addEventListener("scroll", function () {
+      var h = document.documentElement, max = h.scrollHeight - h.clientHeight;
+      if (max <= 0) return;
+      var pct = Math.min(100, Math.round(((h.scrollTop || window.pageYOffset) / max) * 100));
+      marks.forEach(function (m) { if (pct >= m && !hit[m]) { hit[m] = true; enqueueEvent("scroll-depth", null, m); } });
+    }, { passive: true });
+  }
+
+  addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden") flush(); });
+  addEventListener("pagehide", flush);
+})();
+</script>
